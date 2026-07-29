@@ -1,0 +1,27 @@
+[project]
+name = "garden-companion"
+version = "0.1.0"
+description = "RAG + agent chatbot for gardening questions, grounded in public-domain gardening books and university extension fact sheets."
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.2",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "pandas>=2.2",
+    "tqdm>=4.66",
+    "python-dotenv>=1.0",
+    "openai>=1.50",
+    "pydantic>=2.8",
+    "tiktoken>=0.7",
+    "langchain-text-splitters>=0.3",
+    "streamlit>=1.38",
+    "dagster>=1.8",
+    "dagster-webserver>=1.8",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.0",
+]
