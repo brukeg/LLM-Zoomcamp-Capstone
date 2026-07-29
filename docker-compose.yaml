@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-garden_companion}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - garden_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-garden_companion}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # streamlit app, grafana added here in later days once each piece works
+  # standalone. See docs/decisions.md and the day-by-day plan.
+
+volumes:
+  garden_pg_data:
