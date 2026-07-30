@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS documents (
     title         TEXT NOT NULL,
     author        TEXT,
     license_note  TEXT,
+    raw_text      TEXT,                     -- cleaned full text, landed here before section/chunk splitting
     fetched_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 

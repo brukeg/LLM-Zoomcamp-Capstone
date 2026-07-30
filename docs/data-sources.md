@@ -13,44 +13,39 @@ Public domain, no licensing concerns, plain-text download at a predictable
 URL: `https://www.gutenberg.org/cache/epub/{id}/pg{id}.txt`
 
 Picked for being practical/reference material rather than memoir or poetry —
-these actually answer gardening questions:
-
-| ID    | Title                                                          | Author(s)                  |
-|-------|-----------------------------------------------------------------|-----------------------------|
-| 9550  | Manual of Gardening (Second Edition)                             | L. H. Bailey                |
-| 34602 | The Practical Garden-Book                                        | L. H. Bailey & C. E. Hunn   |
-| 22484 | Gardening Indoors and Under Glass                                 | F. F. Rockwell              |
-| 21414 | Culinary Herbs: Their Cultivation, Harvesting, Curing and Uses    | M. G. Kains                 |
-| 16232 | The Culture of Vegetables and Flowers From Seeds and Roots        | Sutton & Sons Ltd.           |
-| 21682 | The Field and Garden Vegetables of America                        | Fearing Burr                |
-| 6117  | Success with Small Fruits                                         | Edward Payson Roe           |
-| 10852 | Hardy Ornamental Flowering Trees and Shrubs                       | Angus D. Webster            |
+these actually answer gardening questions. The authoritative list of 8
+titles is in [`ingestion/assets/config.py`](../ingestion/assets/config.py)
+(`GUTENBERG_BOOKS`) — code is the source of truth so it can't drift from
+what the pipeline actually fetches; this doc explains the reasoning.
 
 More can be added later from the [Gardening](https://www.gutenberg.org/ebooks/subject/1242)
-and [Horticulture](https://www.gutenberg.org/ebooks/bookshelf/43) shelves —
-the fetch asset takes a list of IDs, so this table is the single place to
-extend the corpus.
+and [Horticulture](https://www.gutenberg.org/ebooks/bookshelf/43) shelves.
 
 Note: `gutendex.com` (the usual JSON API for querying Gutenberg metadata) was
-blocked by my sandbox's network allowlist when I tried to verify it, so this
-list was built by hand-browsing `gutenberg.org`'s subject/bookshelf pages
-instead — that part worked fine. Your environment (Codespace or local)
-shouldn't have this restriction; worth double checking `gutendex.com` is
-reachable if you want to script the discovery step instead of using a fixed
-ID list.
+blocked by my sandbox's network allowlist when I tried to verify it, so the
+book list was picked by hand-browsing `gutenberg.org`'s subject/bookshelf
+pages instead, and the fetch asset hits `gutenberg.org` directly (also
+verified reachable) rather than going through gutendex. Fine either way —
+gutendex would only matter if you want to script the discovery step instead
+of a fixed ID list.
 
 ## Tier 2: Fact sheets (Clemson HGIC)
 
 [Clemson Cooperative Extension's Home & Garden Information Center](https://hgic.clemson.edu/all-factsheets/)
-publishes 850+ fact sheets as individual HTML pages under one consistent
-site structure — one source instead of stitching together several
-university extension sites with different templates. Topics span
-vegetables, fruit, ornamentals, pests/diseases, soils, and trees/shrubs.
+publishes 850+ fact sheets. Better than that: they're a registered WordPress
+custom post type with a working REST API —
+`https://hgic.clemson.edu/wp-json/wp/v2/factsheet?slug={slug}` returns clean
+JSON with `content.rendered` holding just the article HTML, no site chrome
+(no nav, no related-posts widget, no footer). Confirmed by fetching the
+`tomato-basics` factsheet directly. This is what the fetch asset uses
+instead of scraping rendered HTML pages — much less fragile.
 
-For the initial pipeline, scope to a handful of categories (vegetables,
-fruit, pests & diseases, soils & fertility) rather than all 850 — enough
-for solid ground truth without a scraping job that takes all day. Easy to
-widen later since it's the same asset with a different category filter.
+The curated list of 20 slugs (spanning vegetables, fruit, pests & diseases,
+soil/fertility) is in
+[`ingestion/assets/config.py`](../ingestion/assets/config.py)
+(`FACTSHEET_SLUGS`), verified real before being added — not the full 850.
+Widening later is mechanical: page through the `/wp-json/wp/v2/factsheet`
+collection endpoint instead of a fixed slug list.
 
 Licensing: Clemson HGIC is a public state extension service. Content isn't
 under an explicit open license like UF/IFAS EDIS (CC BY-NC-ND), so treat
