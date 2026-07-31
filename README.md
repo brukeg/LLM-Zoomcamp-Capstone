@@ -6,6 +6,12 @@ A RAG chatbot for gardening questions, built as the capstone project for
 
 > Status: early build. This README will be filled in as each piece lands —
 > see the checklist below for what's done.
+>
+> Progress so far: ingestion fetch step is working — 8 Gutenberg books and
+> 20 Clemson HGIC fact sheets land cleanly in Postgres via Dagster assets.
+> Chunking, embedding, and everything downstream is still to come, so
+> nothing in the checklist below is checked yet on purpose — "fetch works"
+> isn't "ingestion pipeline done."
 
 ## Problem
 
@@ -24,6 +30,7 @@ Two tiers, both fetched at ingestion time rather than committed to the repo:
   structured, FAQ-adjacent content.
 
 Full source list and reasoning: [docs/data-sources.md](docs/data-sources.md).
+Fetch assets: [`ingestion/assets/fetch.py`](ingestion/assets/fetch.py).
 
 ## Design decisions
 

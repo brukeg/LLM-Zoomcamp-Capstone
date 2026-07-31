@@ -52,3 +52,25 @@ means the retrieved chunk overlaps that source section, not an exact
 document-ID match. This needs to be spelled out clearly in the eval writeup
 since it's a real methodology adaptation, not just a smaller version of the
 same thing.
+
+## Clemson fact sheets: WordPress REST API, not HTML scraping
+
+Original plan was BeautifulSoup against the rendered HTML pages. Turns out
+`hgic.clemson.edu` runs WordPress with `factsheet` registered as its own
+post type, exposed at `/wp-json/wp/v2/factsheet?slug={slug}` — returns
+`content.rendered` as clean article HTML with none of the page chrome
+(nav, related posts, footer). No selector-guessing against a theme that
+could change; the API only returns the actual content.
+
+One thing this API gets wrong: `title.rendered` is HTML-entity-escaped
+(`&amp;` not `&`), which slipped through on the first real run and showed
+up as literal `&amp;` in stored titles. Fixed with `html.unescape()` in
+`ingestion/assets/fetch.py` — worth remembering if any other field from
+this API gets pulled in later (author names, category labels), since the
+same escaping applies there too.
+
+Matters for later: if Clemson's coverage needs widening past the current
+20-slug sample, or if UF/IFAS EDIS gets added as a second fact-sheet
+source (see docs/data-sources.md), check for a REST API first rather than
+defaulting to HTML scraping. Many WordPress-based extension sites have
+one; it's just not always obvious from the rendered pages.
