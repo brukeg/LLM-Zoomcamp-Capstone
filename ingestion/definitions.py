@@ -5,14 +5,19 @@
 (DAGSTER_HOME must be absolute -- see .env.example) opens the UI at
 http://localhost:3000.
 
-Easiest path: open the Jobs tab, select `full_ingestion_pipeline`, and hit
-Launch Run -- it materializes every asset below in the correct dependency
-order in one go (fetch -> sections -> all three chunking strategies ->
-embeddings), so there's no more manually re-selecting asset groups each
-session.
+Two jobs, deliberately separate (Jobs tab, select one, Launch Run):
 
-To materialize a subset by hand instead (e.g. re-running just one strategy
-after a code change), the dependency order is:
+- `full_ingestion_pipeline` -- fetch -> sections -> all three chunking
+  strategies -> embeddings. Everything in the "ingestion" group. Safe and
+  cheap to re-run whenever source code or data changes.
+- `generate_ground_truth` -- the "evaluation" group's one asset. Kept OUT
+  of full_ingestion_pipeline on purpose: it makes real (if small) LLM calls
+  per section, so it shouldn't silently re-run and re-pay every time the
+  ingestion pipeline does. Run it deliberately, after sections looks right,
+  and don't expect to re-run it often.
+
+To materialize a subset by hand instead of using a job, the dependency
+order is:
 1. `gutenberg_books` and `extension_factsheets` (independent of each other).
 2. `sections`, once those land.
 3. `fixed_chunks`, `structure_chunks`, `recursive_chunks` (independent of
@@ -21,6 +26,8 @@ after a code change), the dependency order is:
    embeds every chunk across all three strategies in one pass, and skips
    any chunk that already has an embedding, so it's safe to re-run after a
    partial failure or after only one strategy changed.
+5. `ground_truth`, once `sections` looks right -- independent of chunking/
+   embeddings, only depends on `sections`.
 """
 
 import dagster as dg
@@ -29,6 +36,7 @@ from dotenv import load_dotenv
 from ingestion.assets.chunking import fixed_chunks, recursive_chunks, structure_chunks
 from ingestion.assets.embedding import chunk_embeddings
 from ingestion.assets.fetch import extension_factsheets, gutenberg_books
+from ingestion.assets.ground_truth import ground_truth
 from ingestion.assets.sections import sections
 from ingestion.resources import PostgresResource
 
@@ -37,9 +45,10 @@ from ingestion.resources import PostgresResource
 # it so far only by coincidence (get_db_connection()'s hardcoded fallback
 # defaults happen to match docker-compose.yaml's values), but
 # OPENAI_API_KEY has no safe fallback to fall back to: without this,
-# chunk_embeddings would call the OpenAI client with api_key=None. Safe to
-# do after the asset imports above -- none of them read env vars at import
-# time, only when their asset function actually runs.
+# chunk_embeddings and ground_truth would call the OpenAI client with
+# api_key=None. Safe to do after the asset imports above -- none of them
+# read env vars at import time, only when their asset function actually
+# runs.
 load_dotenv()
 
 all_assets = [
@@ -50,15 +59,24 @@ all_assets = [
     structure_chunks,
     recursive_chunks,
     chunk_embeddings,
+    ground_truth,
 ]
 
+# Scoped to the "ingestion" group explicitly, NOT AssetSelection.all() --
+# that would silently sweep in `ground_truth` (a different group) and
+# re-trigger paid LLM calls on every routine ingestion re-run.
 full_ingestion_pipeline = dg.define_asset_job(
     name="full_ingestion_pipeline",
-    selection=dg.AssetSelection.all(),
+    selection=dg.AssetSelection.groups("ingestion"),
+)
+
+generate_ground_truth = dg.define_asset_job(
+    name="generate_ground_truth",
+    selection=dg.AssetSelection.groups("evaluation"),
 )
 
 defs = dg.Definitions(
     assets=all_assets,
-    jobs=[full_ingestion_pipeline],
+    jobs=[full_ingestion_pipeline, generate_ground_truth],
     resources={"postgres": PostgresResource()},
 )
