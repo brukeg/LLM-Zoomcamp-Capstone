@@ -14,18 +14,25 @@ from db.connection import get_db_connection
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 
-def init_db() -> None:
+def init_db() -> list[str]:
     schema_sql = SCHEMA_PATH.read_text()
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(schema_sql)
-        conn.commit()
+            conn.commit()
+
+            # Read back the actual table list rather than hardcoding it in
+            # the print statement below -- a hardcoded list goes stale the
+            # next time a table gets added to schema.sql (as just happened
+            # with `ground_truth`) and silently prints something untrue.
+            cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+            return [row[0] for row in cur.fetchall()]
     finally:
         conn.close()
 
 
 if __name__ == "__main__":
-    init_db()
-    print("Database initialized (documents, sections, chunks, conversations, feedback).")
+    tables = init_db()
+    print(f"Database initialized ({', '.join(tables)}).")
