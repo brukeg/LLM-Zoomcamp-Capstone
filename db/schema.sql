@@ -59,6 +59,21 @@ CREATE INDEX IF NOT EXISTS idx_chunks_search_vector ON chunks USING GIN(search_v
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
     ON chunks USING hnsw (embedding vector_cosine_ops);
 
+-- LLM-generated questions, one section can produce several. This is the
+-- ground truth search evaluation (Aug 3) runs against -- a "hit" means a
+-- retrieved chunk's section_id matches this row's section_id, not an exact
+-- document-ID match (see docs/decisions.md for why: a "document" here can
+-- be a whole book, so section is the real granularity).
+CREATE TABLE IF NOT EXISTS ground_truth (
+    id            BIGSERIAL PRIMARY KEY,
+    section_id    TEXT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    question      TEXT NOT NULL,
+    generated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ground_truth_section ON ground_truth(section_id);
+
 -- ============================================================
 -- Monitoring (module 5 pattern, same shape as the course)
 -- ============================================================
