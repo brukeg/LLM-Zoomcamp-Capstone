@@ -74,3 +74,47 @@ Matters for later: if Clemson's coverage needs widening past the current
 source (see docs/data-sources.md), check for a REST API first rather than
 defaulting to HTML scraping. Many WordPress-based extension sites have
 one; it's just not always obvious from the rendered pages.
+
+## Search evaluation result: recursive + hybrid, but method >> strategy
+
+Ran Hit Rate and MRR for all 3 chunking strategies x {keyword, vector,
+hybrid} against the 7,490-question ground truth, top_k=5
+(eval/evaluate_search.py). Full table, ranked by MRR:
+
+| strategy  | method   | hit_rate | mrr    |
+|-----------|----------|----------|--------|
+| recursive | hybrid   | 0.8051   | 0.6782 |
+| structure | hybrid   | 0.7957   | 0.6656 |
+| fixed     | hybrid   | 0.7917   | 0.6638 |
+| recursive | vector   | 0.7846   | 0.6571 |
+| structure | vector   | 0.7733   | 0.6431 |
+| fixed     | vector   | 0.7648   | 0.6393 |
+| fixed     | keyword  | 0.1928   | 0.1729 |
+| structure | keyword  | 0.1853   | 0.1672 |
+| recursive | keyword  | 0.1733   | 0.1571 |
+
+Winner, and what we'll use for the RAG pipeline: **recursive + hybrid**.
+
+The honest read, though, is that the retrieval **method** dominates the
+chunking **strategy**, not the other way around. Hybrid > vector > keyword
+by wide margins everywhere, but within hybrid the three strategies sit
+within ~1.3 percentage points of each other (0.8051 / 0.7957 / 0.7917). At
+7,490 questions that ordering is probably real, but it's small enough that
+"recursive is the best chunking strategy" would be overselling it -- the
+practically important result is "use hybrid retrieval," and recursive just
+happens to edge the others under it.
+
+On keyword being so weak (~0.18 hit rate): expected, not a bug. The ground
+truth questions are LLM paraphrases of section content, not verbatim
+quotes, so pure lexical matching loses to vocabulary mismatch -- exactly
+the gap dense embeddings close. Hybrid beating pure vector everywhere
+(e.g. 0.8051 vs 0.7846 for recursive) confirms keyword still adds a little
+signal on top of vectors via RRF, just not enough to stand on its own.
+
+Method notes: keyword = websearch_to_tsquery + ts_rank_cd on the generated
+tsvector column; vector = cosine `<=>` on the HNSW index; hybrid =
+Reciprocal Rank Fusion (k=60, standard default, not tuned) over a 60-chunk
+candidate pool from each ranker. A "hit" = at least one of the top-5
+retrieved chunks comes from the question's own source section (see the
+ground-truth methodology note above for why correctness is scored by
+section, not exact chunk/document id).
