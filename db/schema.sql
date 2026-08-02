@@ -65,12 +65,24 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
 -- document-ID match (see docs/decisions.md for why: a "document" here can
 -- be a whole book, so section is the real granularity).
 CREATE TABLE IF NOT EXISTS ground_truth (
-    id            BIGSERIAL PRIMARY KEY,
-    section_id    TEXT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    question      TEXT NOT NULL,
-    generated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+    id                 BIGSERIAL PRIMARY KEY,
+    section_id         TEXT NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    document_id        TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    question           TEXT NOT NULL,
+    -- Embedded once (eval/embed_questions.py) and cached here so vector/
+    -- hybrid search evaluation doesn't re-embed all ~7,500 questions on
+    -- every eval re-run. Same text-embedding-3-small / vector(1536) as the
+    -- chunks table, so query and chunk vectors live in the same space.
+    question_embedding vector(1536),
+    generated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
+
+-- Idempotent add for databases created before question_embedding existed:
+-- CREATE TABLE IF NOT EXISTS above is a no-op on an existing table, so it
+-- would never add this column on its own. This ALTER lets `init_db` evolve
+-- an existing ground_truth table without a destructive wipe (unlike the
+-- raw_text-column change earlier in the project, which did need a reset).
+ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS question_embedding vector(1536);
 
 CREATE INDEX IF NOT EXISTS idx_ground_truth_section ON ground_truth(section_id);
 
