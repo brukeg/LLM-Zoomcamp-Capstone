@@ -110,27 +110,44 @@ def hybrid_search(
     pool: int = HYBRID_CANDIDATE_POOL,
     rrf_k: int = RRF_K,
 ) -> list[str]:
-    """Reciprocal Rank Fusion of keyword + vector rankings.
+    """Reciprocal Rank Fusion of keyword + vector rankings, returning
+    section_ids in fused order (what search evaluation needs).
 
-    Each chunk's fused score is the sum over both rankers of 1 / (rrf_k +
-    rank), with rank 1-based. Fusion is at the chunk level (a chunk id can
-    appear in both candidate lists and accumulates score from each), then
-    the top `limit` chunks' section_ids are returned in fused order --
-    keeping the "k retrieved chunks" unit consistent with the other two
-    methods.
+    Thin wrapper over rrf_fuse() -- see that function for the fusion math.
+    Both this (eval) and the RAG pipeline's retrieval share rrf_fuse so
+    there's exactly one implementation of the fusion; this one just maps the
+    fused chunk_ids back to their section_ids.
     """
     keyword = _keyword_candidates(cur, query_text, strategy, pool)
     vector = _vector_candidates(cur, query_embedding, strategy, pool)
 
+    section_of = {chunk_id: section_id for chunk_id, section_id in keyword + vector}
+    ranked_chunk_ids = rrf_fuse(keyword, vector, limit, rrf_k)
+    return [section_of[chunk_id] for chunk_id in ranked_chunk_ids]
+
+
+def rrf_fuse(
+    keyword_candidates: list[tuple],
+    vector_candidates: list[tuple],
+    limit: int,
+    rrf_k: int = RRF_K,
+) -> list[int]:
+    """Reciprocal Rank Fusion over two ranked candidate lists, returning the
+    top `limit` chunk_ids in fused order.
+
+    Each list is [(chunk_id, ...), ...] in rank order -- only the first
+    element (chunk_id) is used, so both the eval candidates (chunk_id,
+    section_id) and any richer row shape work. A chunk's fused score is the
+    sum over both rankers of 1 / (rrf_k + rank), rank 1-based; a chunk in
+    both lists accumulates from each, which is what lets hybrid beat either
+    ranker alone.
+    """
     scores: dict[int, float] = {}
-    section_of: dict[int, str] = {}
-
-    for rank, (chunk_id, section_id) in enumerate(keyword):
+    for rank, candidate in enumerate(keyword_candidates):
+        chunk_id = candidate[0]
         scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (rrf_k + rank + 1)
-        section_of[chunk_id] = section_id
-    for rank, (chunk_id, section_id) in enumerate(vector):
+    for rank, candidate in enumerate(vector_candidates):
+        chunk_id = candidate[0]
         scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (rrf_k + rank + 1)
-        section_of[chunk_id] = section_id
 
-    ranked_chunks = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:limit]
-    return [section_of[chunk_id] for chunk_id in ranked_chunks]
+    return sorted(scores, key=lambda cid: scores[cid], reverse=True)[:limit]
