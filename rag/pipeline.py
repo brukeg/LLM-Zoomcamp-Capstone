@@ -147,6 +147,10 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
             "sources": [],
             "retrieved": [],
             "model": model,
+            "instructions": _SYSTEM_PROMPT,
+            "prompt": "",  # no LLM call was made on the no-retrieval path
+            "search_strategy": strategy,
+            "search_method": "hybrid",
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "latency_seconds": time.time() - started,
             "strategy": strategy,
@@ -172,6 +176,15 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
         "sources": sources,
         "retrieved": chunks,
         "model": model,
+        # instructions + prompt are the exact system/user text sent to the
+        # model, so the conversations table can store what was actually asked
+        # (the monitoring schema has columns for both). search_method is
+        # constant here -- hybrid is the winning config the pipeline is built
+        # on -- but logged explicitly so the dashboard doesn't have to assume.
+        "instructions": _SYSTEM_PROMPT,
+        "prompt": messages[1]["content"],
+        "search_strategy": strategy,
+        "search_method": "hybrid",
         "usage": {
             "prompt_tokens": usage.prompt_tokens,
             "completion_tokens": usage.completion_tokens,
