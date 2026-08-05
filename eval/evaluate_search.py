@@ -14,7 +14,9 @@ ground_truth.question_embedding. Run as a module from the repo root:
     uv run python -m eval.evaluate_search
 """
 
+import json
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -23,6 +25,11 @@ from rag.search import DEFAULT_TOP_K, hybrid_search, keyword_search, vector_sear
 
 STRATEGIES = ["fixed", "structure", "recursive"]
 METHODS = ["keyword", "vector", "hybrid"]
+
+# The dashboard's chunking-strategy comparison panel reads this file, so the
+# chart survives without re-running the ~90k-query evaluation. Written on
+# every run below, so it stays in sync if the eval is ever re-run.
+ARTIFACT_PATH = Path(__file__).parent / "search_eval_results.json"
 
 
 def _reciprocal_rank(retrieved_section_ids: list[str], target_section_id: str) -> float:
@@ -115,7 +122,31 @@ def print_summary(results: list[dict]) -> None:
           f"(hit_rate={winner['hit_rate']:.4f}, mrr={winner['mrr']:.4f})")
 
 
+def write_artifact(results: list[dict], top_k: int, n_questions: int) -> None:
+    payload = {
+        "top_k": top_k,
+        "n_questions": n_questions,
+        "results": [
+            {"strategy": r["strategy"], "method": r["method"],
+             "hit_rate": round(r["hit_rate"], 4), "mrr": round(r["mrr"], 4)}
+            for r in results
+        ],
+    }
+    ARTIFACT_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+
+
 if __name__ == "__main__":
     load_dotenv()
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM ground_truth WHERE question_embedding IS NOT NULL")
+            n_questions = cur.fetchone()[0]
+    finally:
+        conn.close()
+
     results = evaluate()
     print_summary(results)
+    write_artifact(results, DEFAULT_TOP_K, n_questions)
+    print(f"\nResults written to {ARTIFACT_PATH.name}")

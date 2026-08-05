@@ -1,0 +1,15 @@
+{
+  "top_k": 5,
+  "n_questions": 7490,
+  "results": [
+    {"strategy": "recursive", "method": "hybrid", "hit_rate": 0.8051, "mrr": 0.6782},
+    {"strategy": "structure", "method": "hybrid", "hit_rate": 0.7957, "mrr": 0.6656},
+    {"strategy": "fixed", "method": "hybrid", "hit_rate": 0.7917, "mrr": 0.6638},
+    {"strategy": "recursive", "method": "vector", "hit_rate": 0.7846, "mrr": 0.6571},
+    {"strategy": "structure", "method": "vector", "hit_rate": 0.7733, "mrr": 0.6431},
+    {"strategy": "fixed", "method": "vector", "hit_rate": 0.7648, "mrr": 0.6393},
+    {"strategy": "fixed", "method": "keyword", "hit_rate": 0.1928, "mrr": 0.1729},
+    {"strategy": "structure", "method": "keyword", "hit_rate": 0.1853, "mrr": 0.1672},
+    {"strategy": "recursive", "method": "keyword", "hit_rate": 0.1733, "mrr": 0.1571}
+  ]
+}

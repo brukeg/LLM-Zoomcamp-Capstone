@@ -1,0 +1,13 @@
+# Keep the build context small and avoid copying the host's virtualenv into
+# the image (the container builds its own via uv sync).
+.venv/
+.dagster_home/
+.tmp_dagster_home*/
+.git/
+.gitignore
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.ipynb_checkpoints/
