@@ -15,8 +15,45 @@ services:
       timeout: 5s
       retries: 10
 
-  # streamlit app, grafana added here in later days once each piece works
-  # standalone. See docs/decisions.md and the day-by-day plan.
+  # Chat app. Same image serves the dashboard below (different command).
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # POSTGRES_HOST must be the compose service name here, not localhost --
+      # this overrides whatever the app's .env would default to, since inside
+      # the compose network the DB is reachable as `postgres`, not localhost.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-garden_companion}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      # Substituted from the project .env at `docker compose up` time (compose
+      # auto-loads .env for ${...} substitution). Not baked into the image --
+      # .env is in .dockerignore.
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8501:8501"
+
+  # Monitoring dashboard: same build, different entrypoint, on host port 8502.
+  dashboard:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-garden_companion}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    command: [".venv/bin/streamlit", "run", "app/dashboard.py",
+              "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+    ports:
+      - "8502:8501"
 
 volumes:
   garden_pg_data:
