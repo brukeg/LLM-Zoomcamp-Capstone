@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import altair as alt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
@@ -25,6 +26,7 @@ load_dotenv()
 from app.metrics import (  # noqa: E402
     get_judge_distribution,
     get_overview,
+    get_strategy_comparison,
     get_timeseries,
     get_user_feedback_counts,
 )
@@ -42,6 +44,9 @@ try:
 finally:
     conn.close()
 
+# Not from the DB -- offline search-eval artifact (see get_strategy_comparison).
+strategy_comparison = get_strategy_comparison()
+
 if overview["n_conversations"] == 0:
     st.info("No conversations logged yet. Ask a few questions in the chat app first "
             "(`streamlit run app/main.py`), then reload this page.")
@@ -57,15 +62,31 @@ c4.metric("Avg tokens", f"{overview['avg_tokens']:.0f}")
 st.divider()
 df = pd.DataFrame(timeseries)
 
+
+def _trend_chart(source, y_field: str, y_title: str):
+    # Explicit Altair rather than st.line_chart: the native chart auto-pads a
+    # small integer x-axis into negatives (id -3..9 with only 9 points), which
+    # looks broken. nice=False, zero=False pins the x domain to the real ids.
+    return (
+        alt.Chart(source)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("id:Q", scale=alt.Scale(nice=False, zero=False), title="conversation id"),
+            y=alt.Y(f"{y_field}:Q", title=y_title),
+        )
+        .properties(height=240)
+    )
+
+
 # --- Panel 2: cost trend ----------------------------------------------------
 left, right = st.columns(2)
 with left:
     st.subheader("Cost per conversation")
-    st.line_chart(df, x="id", y="cost", height=240)
+    st.altair_chart(_trend_chart(df, "cost", "cost ($)"), use_container_width=True)
 # --- Panel 3: latency trend -------------------------------------------------
 with right:
     st.subheader("Latency per conversation")
-    st.line_chart(df, x="id", y="response_time", height=240)
+    st.altair_chart(_trend_chart(df, "response_time", "latency (s)"), use_container_width=True)
 
 st.divider()
 
@@ -96,5 +117,46 @@ with right:
     else:
         st.caption("No thumbs feedback yet.")
 
-st.caption("Panels shown: overview, cost, latency, judge relevance, user feedback. "
-           "Token breakdown + chunking-strategy comparison land Aug 8.")
+st.divider()
+
+# --- Panel 6: token breakdown (prompt vs completion) ------------------------
+left, right = st.columns(2)
+with left:
+    st.subheader("Tokens per conversation")
+    # Long-form frame so color= stacks prompt vs completion in one bar per turn.
+    token_rows = []
+    for row in timeseries:
+        token_rows.append({"id": row["id"], "kind": "prompt", "tokens": row["prompt_tokens"]})
+        token_rows.append({"id": row["id"], "kind": "completion", "tokens": row["completion_tokens"]})
+    token_df = pd.DataFrame(token_rows)
+    st.bar_chart(token_df, x="id", y="tokens", color="kind", height=240)
+
+# --- Panel 7 (bonus analytics): chunking-strategy comparison ----------------
+# Offline search-eval, not live traffic -- the "bonus analytics view" from the
+# plan. Six live panels above; this is the extra one.
+with right:
+    st.subheader("Search eval: strategy × method (bonus)")
+    if strategy_comparison:
+        strat_df = pd.DataFrame(strategy_comparison)
+        strat_df["combo"] = strat_df["strategy"] + " · " + strat_df["method"]
+        # Altair so the bars actually rank best->worst by hit rate --
+        # st.bar_chart ignores the dataframe order and sorts the x-axis
+        # alphabetically, which buries the winner mid-chart.
+        strat_chart = (
+            alt.Chart(strat_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("combo:N", sort=alt.SortField("hit_rate", order="descending"), title=None),
+                y=alt.Y("hit_rate:Q", title="Hit Rate @5"),
+                color=alt.Color("method:N"),
+            )
+            .properties(height=240)
+        )
+        st.altair_chart(strat_chart, use_container_width=True)
+        st.caption("Hit Rate @5 from the Aug 3 evaluation (7,490 questions). "
+                   "Winner: recursive + hybrid.")
+    else:
+        st.caption("Run `uv run python -m eval.evaluate_search` to populate this.")
+
+st.caption("Panels: cost, latency, tokens, judge relevance, user feedback, "
+           "chunking-strategy comparison (bonus) — plus overview counters up top.")
