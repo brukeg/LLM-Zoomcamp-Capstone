@@ -20,7 +20,11 @@ BATCH_SIZE = 100
 
 
 def get_openai_client() -> OpenAI:
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    # Explicit 60s timeout instead of the SDK's 10-minute default: a single
+    # hung request on the default would freeze a serial eval for ten minutes
+    # (exactly the symptom seen on 8/5). With this, a stuck call fails fast
+    # and the caller's retry loop moves on.
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=60.0)
 
 
 def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:

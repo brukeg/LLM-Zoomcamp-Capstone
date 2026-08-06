@@ -57,6 +57,54 @@ _SYSTEM_PROMPT = (
     "answers practical, direct, and grounded in what the passages actually say."
 )
 
+# Alternative answer prompt, compared against _SYSTEM_PROMPT in the RAG
+# evaluation A/B (eval/evaluate_rag.py) so the "LLM evaluation" is over more
+# than one approach. Same grounding constraints; different answer shape
+# (direct answer first, then supporting detail).
+_SYSTEM_PROMPT_V2 = (
+    "You are Garden Companion. Using ONLY the numbered context passages below "
+    "(from public-domain gardening books and Clemson Extension fact sheets), "
+    "answer the gardener's question. Lead with the direct answer in one or two "
+    "sentences, then add the important supporting detail from the passages. "
+    "Cite sources inline as [1], [2]. If the passages don't cover the question, "
+    "say so briefly and do not guess or draw on outside knowledge."
+)
+
+# Registry the evaluation harness iterates over. Keys are the labels that show
+# up in the comparison table; whichever wins becomes the default here.
+PROMPT_VARIANTS = {
+    "v1_grounded": _SYSTEM_PROMPT,
+    "v2_direct": _SYSTEM_PROMPT_V2,
+}
+
+# Query rewriting (a course "best practice"): an LLM turns the user's
+# natural-language question into a keyword-focused search query before
+# retrieval. The rewritten query drives BOTH keyword and vector search; the
+# ORIGINAL question is still what the answer is written to, so rewriting only
+# affects what gets retrieved, not how the final answer reads. Cheap model --
+# this is a short, mechanical transformation.
+REWRITE_MODEL = "gpt-5.6-luna"
+
+_REWRITE_PROMPT = (
+    "Rewrite the gardening question below into a concise search query -- just "
+    "the key terms (plant names, symptoms, tasks, conditions) someone would "
+    "search for in gardening reference books and extension fact sheets. Return "
+    "only the rewritten query, no punctuation or preamble.\n\nQuestion: {question}"
+)
+
+
+def rewrite_query(client, question: str, model: str = REWRITE_MODEL) -> str:
+    """Return a retrieval-focused rewrite of `question`, or the original
+    question unchanged if the model returns nothing usable (defensive -- a
+    blank rewrite must never wipe out the actual search query).
+    """
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": _REWRITE_PROMPT.format(question=question)}],
+    )
+    rewritten = (response.choices[0].message.content or "").strip()
+    return rewritten or question
+
 
 def retrieve(cur, question: str, question_embedding, strategy: str = DEFAULT_STRATEGY,
              top_k: int = DEFAULT_TOP_K, pool: int = HYBRID_CANDIDATE_POOL) -> list[dict]:
@@ -91,10 +139,12 @@ def retrieve(cur, question: str, question_embedding, strategy: str = DEFAULT_STR
     return [by_id[cid] for cid in ranked_chunk_ids if cid in by_id]
 
 
-def build_messages(question: str, chunks: list[dict]) -> list[dict]:
+def build_messages(question: str, chunks: list[dict], system_prompt: str = _SYSTEM_PROMPT) -> list[dict]:
     """Assemble the chat messages: system instruction + a user turn holding
     the numbered context passages and the question. Passage numbers ([1],
     [2], ...) match the citation scheme the system prompt asks for.
+    `system_prompt` is a parameter so the evaluation A/B can swap prompt
+    variants without touching the rest of the pipeline.
     """
     context_blocks = []
     for i, chunk in enumerate(chunks, start=1):
@@ -105,23 +155,35 @@ def build_messages(question: str, chunks: list[dict]) -> list[dict]:
 
     user_content = f"Question: {question}\n\nContext passages:\n{context}\n\nAnswer:"
     return [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
 
 
 def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TOP_K,
-        model: str = ANSWER_MODEL) -> dict:
-    """End-to-end: embed the question, hybrid-retrieve, prompt the LLM,
-    return a structured result. Opens and closes its own DB connection so
-    callers (CLI, Streamlit) don't have to manage one.
+        model: str = ANSWER_MODEL, system_prompt: str = _SYSTEM_PROMPT_V2, rewrite: bool = False) -> dict:
+    """End-to-end: (optionally) rewrite the question into a search query,
+    embed it, hybrid-retrieve, prompt the LLM, return a structured result.
+    Opens and closes its own DB connection so callers (CLI, Streamlit) don't
+    have to manage one.
+
+    `system_prompt` and `rewrite` are parameters so the evaluation harness
+    can A/B different answer prompts and toggle query rewriting. The defaults
+    are the config that won the RAG evaluation (see docs/decisions.md): the
+    v2_direct prompt, and rewriting OFF -- the A/B showed query rewriting
+    actually *hurt* answer relevance on this corpus, so it's implemented and
+    evaluated but off by default.
 
     Returns a dict with the answer, the passages used (for citation/display
     and logging), token usage, latency, and the config used -- everything
-    the Aug 6 monitoring tables need.
+    the monitoring tables need.
     """
     client = get_openai_client()
     started = time.time()
+
+    # Rewrite drives retrieval only; the original question is what the answer
+    # is written to (see build_messages call below).
+    search_query = rewrite_query(client, question) if rewrite else question
 
     # embed_batch returns a plain Python list, which psycopg adapts as a
     # double precision[] -- and there is no `vector <=> double precision[]`
@@ -131,23 +193,24 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
     # these functions (its question vectors came back from the DB as numpy
     # arrays), which is why eval worked and the first live rag() call did
     # not. Caught on the first real run 8/2/26.
-    question_embedding = np.asarray(embed_batch(client, [question])[0], dtype=np.float32)
+    question_embedding = np.asarray(embed_batch(client, [search_query])[0], dtype=np.float32)
 
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            chunks = retrieve(cur, question, question_embedding, strategy, top_k)
+            chunks = retrieve(cur, search_query, question_embedding, strategy, top_k)
     finally:
         conn.close()
 
     if not chunks:
         return {
             "question": question,
+            "search_query": search_query,
             "answer": "I couldn't find anything relevant in the gardening sources for that question.",
             "sources": [],
             "retrieved": [],
             "model": model,
-            "instructions": _SYSTEM_PROMPT,
+            "instructions": system_prompt,
             "prompt": "",  # no LLM call was made on the no-retrieval path
             "search_strategy": strategy,
             "search_method": "hybrid",
@@ -156,7 +219,7 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
             "strategy": strategy,
         }
 
-    messages = build_messages(question, chunks)
+    messages = build_messages(question, chunks, system_prompt)
     response = client.chat.completions.create(model=model, messages=messages)
     answer = response.choices[0].message.content
 
@@ -172,6 +235,7 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
     usage = response.usage
     return {
         "question": question,
+        "search_query": search_query,
         "answer": answer,
         "sources": sources,
         "retrieved": chunks,
@@ -181,7 +245,7 @@ def rag(question: str, strategy: str = DEFAULT_STRATEGY, top_k: int = DEFAULT_TO
         # (the monitoring schema has columns for both). search_method is
         # constant here -- hybrid is the winning config the pipeline is built
         # on -- but logged explicitly so the dashboard doesn't have to assume.
-        "instructions": _SYSTEM_PROMPT,
+        "instructions": system_prompt,
         "prompt": messages[1]["content"],
         "search_strategy": strategy,
         "search_method": "hybrid",
