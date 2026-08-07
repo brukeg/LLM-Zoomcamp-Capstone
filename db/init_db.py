@@ -17,7 +17,10 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 def init_db() -> list[str]:
     schema_sql = SCHEMA_PATH.read_text()
 
-    conn = get_db_connection()
+    # register=False: on a fresh database the `vector` extension doesn't exist
+    # yet -- schema.sql (run just below) is what creates it -- so we must not
+    # try to register the vector type on this bootstrap connection.
+    conn = get_db_connection(register=False)
     try:
         with conn.cursor() as cur:
             cur.execute(schema_sql)
