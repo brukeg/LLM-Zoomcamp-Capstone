@@ -33,7 +33,9 @@ help:
 	@echo "    make clean           stop containers AND delete the data volume (destructive)"
 
 db-up:
-	docker compose up -d postgres
+	# --wait blocks until postgres passes its healthcheck, so the init/ingest
+	# steps that follow don't race a not-yet-ready database.
+	docker compose up -d --wait postgres
 
 init: db-up
 	uv run python -m db.init_db
