@@ -220,3 +220,6 @@ __marimo__/
 # Dagster
 .dagster_home/
 .tmp_dagster_home*/
+
+# macOS Finder metadata (created automatically when a folder is viewed in Finder)
+.DS_Store

@@ -10,9 +10,7 @@ soil is best for strawberries?"* — and get a practical answer assembled only
 from trustworthy gardening sources, with citations back to the book or fact
 sheet each claim came from.
 
-<!-- SCREENSHOT: chat app answering a question, with sources + metrics.
-     Save to docs/images/chat.png and it renders below. -->
-<!-- ![Chat app](docs/images/chat.png) -->
+![Garden Companion chat app answering a gardening question with cited sources](docs/screenshots/chat.png)
 
 <!-- DEMO VIDEO: record from the Streamlit app menu (top-right → Record a
      screencast), then drag the file into this README on GitHub to embed. -->
@@ -199,8 +197,7 @@ six charts: cost, latency, token breakdown, online-judge relevance
 distribution, user feedback, and (bonus) the offline chunking-strategy
 comparison.
 
-<!-- SCREENSHOT: dashboard. Save to docs/images/dashboard.png -->
-<!-- ![Dashboard](docs/images/dashboard.png) -->
+![Monitoring dashboard with six panels: cost, latency, tokens, judge relevance, user feedback, and strategy comparison](docs/screenshots/dashboard.png)
 
 ## Containerization
 
